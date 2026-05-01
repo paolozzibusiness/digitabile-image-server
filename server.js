@@ -6,29 +6,17 @@ const PORT = process.env.PORT || 3000;
 const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'djriubaun';
 const UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || 'digitabile';
 
-const ACCENT_COLORS = {
-  blue:  '#4f8ef7',
-  gold:  '#f7b94f',
-  green: '#4ff7a0',
-  pink:  '#f74f9e',
-  purple:'#a855f7'
-};
+const ACCENT_COLORS = { blue:'#4f8ef7', gold:'#f7b94f', green:'#4ff7a0', pink:'#f74f9e', purple:'#a855f7' };
 
 function esc(str) {
-  return (str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+  return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 }
 
 function wrapText(text, maxChars) {
-  const words = (text || '').split(' ');
-  const lines = [];
-  let current = '';
+  const words = (text||'').split(' ');
+  const lines = []; let current = '';
   for (const word of words) {
-    const test = current ? current + ' ' + word : word;
+    const test = current ? current+' '+word : word;
     if (test.length <= maxChars) { current = test; }
     else { if (current) lines.push(current); current = word; }
   }
@@ -37,15 +25,35 @@ function wrapText(text, maxChars) {
 }
 
 async function fetchImage(url) {
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://www.google.com/'
-  };
-  const resp = await fetch(url, { headers });
-  if (!resp.ok) throw new Error(`Image fetch failed: ${resp.status} ${url}`);
-  return Buffer.from(await resp.arrayBuffer());
+  const attempts = [
+    { 'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36', 'Referer':'https://www.google.com/', 'Accept':'image/*,*/*' },
+    { 'User-Agent':'Googlebot/2.1 (+http://www.google.com/bot.html)', 'Accept':'image/*' },
+    { 'User-Agent':'facebookexternalhit/1.1', 'Accept':'image/*' }
+  ];
+  for (const headers of attempts) {
+    try {
+      const resp = await fetch(url, { headers });
+      if (resp.ok) return Buffer.from(await resp.arrayBuffer());
+    } catch(e) { continue; }
+  }
+  return null; // all attempts failed → use fallback
+}
+
+function makeFallbackImage(accent) {
+  // Generate a dark gradient SVG as fallback background (1080x1350)
+  const color = ACCENT_COLORS[accent] || '#4f8ef7';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#050510"/>
+        <stop offset="100%" stop-color="#0a0a1e"/>
+      </linearGradient>
+    </defs>
+    <rect width="1080" height="1350" fill="url(#bg)"/>
+    <circle cx="200" cy="200" r="300" fill="${color}" fill-opacity="0.05"/>
+    <circle cx="880" cy="1150" r="250" fill="${color}" fill-opacity="0.07"/>
+  </svg>`;
+  return Buffer.from(svg);
 }
 
 async function uploadToCloudinary(imageBuffer) {
@@ -53,80 +61,58 @@ async function uploadToCloudinary(imageBuffer) {
   const blob = new Blob([imageBuffer], { type: 'image/jpeg' });
   formData.append('file', blob, 'slide.jpg');
   formData.append('upload_preset', UPLOAD_PRESET);
-  const resp = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-    method: 'POST',
-    body: formData
-  });
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`Cloudinary upload failed: ${resp.status} ${err}`);
-  }
+  const resp = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method:'POST', body:formData });
+  if (!resp.ok) throw new Error(`Cloudinary: ${resp.status} ${await resp.text()}`);
   const data = await resp.json();
   return data.secure_url;
 }
 
-function buildSliderSVG(params) {
-  const { titolo, desc1, desc2, desc3, numero, accent, tag } = params;
-  const accentColor = ACCENT_COLORS[accent] || '#4f8ef7';
-  const titleLines = wrapText((titolo || 'TITOLO').toUpperCase(), 18);
-  const descLines = [desc1, desc2, desc3].filter(d => d && d.trim());
+function buildSlideSVG(params, accentColor) {
+  const { titolo, desc1, desc2, desc3, numero, tag } = params;
+  const titleLines = wrapText((titolo||'TITOLO').toUpperCase(), 18);
+  const descLines = [desc1,desc2,desc3].filter(d=>d&&d.trim());
+  const TITLE_H=98, DESC_H=46, SIDE=65, BOTTOM=100;
+  const totalH = 6+16+titleLines.length*TITLE_H+20+descLines.length*DESC_H;
+  const startY = 1350-BOTTOM-totalH-60;
 
-  const TITLE_LINE_H = 98;
-  const DESC_LINE_H = 46;
-  const SIDE_PAD = 65;
-  const BOTTOM_AREA = 100;
-
-  const totalContentH = 6 + 16 + titleLines.length * TITLE_LINE_H + 20 + descLines.length * DESC_LINE_H;
-  const contentStartY = 1350 - BOTTOM_AREA - totalContentH - 60;
-
-  let titleSvg = '';
-  titleLines.forEach((line, i) => {
-    titleSvg += `<text x="${SIDE_PAD}" y="${contentStartY + 22 + i * TITLE_LINE_H}" font-family="Arial Black,Arial,sans-serif" font-size="86" font-weight="900" fill="white" letter-spacing="-1">${esc(line)}</text>`;
+  let titleSvg='';
+  titleLines.forEach((l,i) => {
+    titleSvg+=`<text x="${SIDE}" y="${startY+22+i*TITLE_H}" font-family="Arial Black,Arial,sans-serif" font-size="86" font-weight="900" fill="white" letter-spacing="-1">${esc(l)}</text>`;
   });
-
-  const descStartY = contentStartY + 22 + titleLines.length * TITLE_LINE_H + 28;
-  let descSvg = '';
-  descLines.forEach((line, i) => {
-    descSvg += `<text x="${SIDE_PAD}" y="${descStartY + i * DESC_LINE_H}" font-family="Arial,sans-serif" font-size="38" font-weight="400" fill="rgba(255,255,255,0.85)">${esc(line)}</text>`;
+  const descY = startY+22+titleLines.length*TITLE_H+28;
+  let descSvg='';
+  descLines.forEach((l,i) => {
+    descSvg+=`<text x="${SIDE}" y="${descY+i*DESC_H}" font-family="Arial,sans-serif" font-size="38" fill="rgba(255,255,255,0.85)">${esc(l)}</text>`;
   });
-
-  const barY = contentStartY - 22;
-  const slideNum = parseInt((numero || '1').split('/')[0].trim()) - 1;
-  const dotsSvg = [0,1,2,3,4].map(i =>
-    i === slideNum
-      ? `<rect x="${SIDE_PAD + i * 22}" y="1290" width="26" height="8" rx="4" fill="white"/>`
-      : `<circle cx="${SIDE_PAD + 13 + i * 22}" cy="1294" r="4" fill="rgba(255,255,255,0.25)"/>`
-  ).join('');
+  const barY=startY-22;
+  const slideNum=parseInt((numero||'1').split('/')[0].trim())-1;
+  const dots=[0,1,2,3,4].map(i=>i===slideNum
+    ?`<rect x="${SIDE+i*22}" y="1290" width="26" height="8" rx="4" fill="white"/>`
+    :`<circle cx="${SIDE+13+i*22}" cy="1294" r="4" fill="rgba(255,255,255,0.25)"/>`).join('');
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
-    <defs>
-      <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#000" stop-opacity="0.08"/>
-        <stop offset="40%" stop-color="#000" stop-opacity="0.35"/>
-        <stop offset="100%" stop-color="#000" stop-opacity="0.93"/>
-      </linearGradient>
-    </defs>
-    <rect width="1080" height="1350" fill="url(#grad)"/>
-    <text x="${SIDE_PAD}" y="72" font-family="Arial,sans-serif" font-size="28" fill="rgba(255,255,255,0.45)" letter-spacing="3">${esc(numero || '01 / 05')}</text>
-    <rect x="${1080 - SIDE_PAD - 150}" y="42" width="150" height="40" rx="4" fill="rgba(15,20,50,0.85)"/>
-    <text x="${1080 - SIDE_PAD - 75}" y="68" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${accentColor}" text-anchor="middle" letter-spacing="1">${esc((tag || 'AI').toUpperCase())}</text>
-    <rect x="${SIDE_PAD}" y="${barY}" width="65" height="6" fill="${accentColor}" rx="3"/>
-    ${titleSvg}
-    ${descSvg}
-    ${dotsSvg}
-    <text x="${1080 - SIDE_PAD}" y="1300" font-family="Arial,sans-serif" font-size="26" font-weight="700" fill="rgba(255,255,255,0.55)" text-anchor="end">@digitabilenews</text>
+    <defs><linearGradient id="ov" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.08"/>
+      <stop offset="40%" stop-color="#000" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.93"/>
+    </linearGradient></defs>
+    <rect width="1080" height="1350" fill="url(#ov)"/>
+    <text x="${SIDE}" y="72" font-family="Arial,sans-serif" font-size="28" fill="rgba(255,255,255,0.45)" letter-spacing="3">${esc(numero||'01 / 05')}</text>
+    <rect x="${1080-SIDE-150}" y="42" width="150" height="40" rx="4" fill="rgba(15,20,50,0.85)"/>
+    <text x="${1080-SIDE-75}" y="68" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${accentColor}" text-anchor="middle" letter-spacing="1">${esc((tag||'AI').toUpperCase())}</text>
+    <rect x="${SIDE}" y="${barY}" width="65" height="6" fill="${accentColor}" rx="3"/>
+    ${titleSvg}${descSvg}${dots}
+    <text x="${1080-SIDE}" y="1300" font-family="Arial,sans-serif" font-size="26" font-weight="700" fill="rgba(255,255,255,0.55)" text-anchor="end">@digitabilenews</text>
   </svg>`;
 }
 
 function buildCtaSVG() {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
-    <defs>
-      <linearGradient id="ctaGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#000820" stop-opacity="0.6"/>
-        <stop offset="100%" stop-color="#000000" stop-opacity="0.95"/>
-      </linearGradient>
-    </defs>
-    <rect width="1080" height="1350" fill="url(#ctaGrad)"/>
+    <defs><linearGradient id="ov" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000820" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.95"/>
+    </linearGradient></defs>
+    <rect width="1080" height="1350" fill="url(#ov)"/>
     <text x="1015" y="70" font-family="Arial,sans-serif" font-size="26" font-weight="700" fill="rgba(255,255,255,0.5)" text-anchor="end">@digitabilenews</text>
     <text x="65" y="70" font-family="Arial,sans-serif" font-size="28" fill="rgba(255,255,255,0.35)" letter-spacing="3">05 / 05</text>
     <rect x="440" y="430" width="200" height="4" fill="#4f8ef7" rx="2"/>
@@ -146,39 +132,44 @@ function buildCtaSVG() {
   </svg>`;
 }
 
-// Main endpoint: generate slide + upload to Cloudinary + return URL
-// GET /generate?imageUrl=...&titolo=...&desc1=...&desc2=...&desc3=...&numero=01/05&accent=blue&tag=AI&type=slide|cta
+// Main endpoint
 app.get('/generate', async (req, res) => {
   try {
-    const { imageUrl, type = 'slide', ...rest } = req.query;
-    if (!imageUrl) return res.status(400).json({ error: 'imageUrl is required' });
+    const { imageUrl, type='slide', accent='blue', ...rest } = req.query;
+    const accentColor = ACCENT_COLORS[accent] || '#4f8ef7';
 
-    // 1. Fetch background image with browser-like headers
-    const imgBuffer = await fetchImage(imageUrl);
+    // 1. Try to fetch background image, fall back to gradient if blocked
+    let baseBuffer;
+    if (imageUrl) {
+      const fetched = await fetchImage(imageUrl);
+      if (fetched) {
+        baseBuffer = await sharp(fetched).resize(1080,1350,{fit:'cover',position:'centre'}).jpeg({quality:88}).toBuffer();
+      }
+    }
+    if (!baseBuffer) {
+      // Fallback: render the SVG gradient as base image
+      const fallbackSvg = makeFallbackImage(accent);
+      baseBuffer = await sharp(fallbackSvg).resize(1080,1350).jpeg({quality:88}).toBuffer();
+    }
 
-    // 2. Generate SVG overlay
-    const svg = type === 'cta' ? buildCtaSVG() : buildSliderSVG(rest);
+    // 2. Build overlay SVG
+    const svg = type==='cta' ? buildCtaSVG() : buildSlideSVG(rest, accentColor);
 
-    // 3. Composite image + SVG with sharp
-    const slideBuffer = await sharp(imgBuffer)
-      .resize(1080, 1350, { fit: 'cover', position: 'centre' })
-      .composite([{ input: Buffer.from(svg), blend: 'over' }])
-      .jpeg({ quality: 92 })
+    // 3. Composite
+    const slideBuffer = await sharp(baseBuffer)
+      .composite([{input:Buffer.from(svg), blend:'over'}])
+      .jpeg({quality:92})
       .toBuffer();
 
-    // 4. Upload to Cloudinary → get stable URL
-    const cloudinaryUrl = await uploadToCloudinary(slideBuffer);
+    // 4. Upload to Cloudinary
+    const url = await uploadToCloudinary(slideBuffer);
 
-    // 5. Return the Cloudinary URL
-    res.json({ url: cloudinaryUrl });
-
+    res.json({ url });
   } catch (err) {
     console.error('GENERATE ERROR:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Health check
-app.get('/', (req, res) => res.json({ status: 'ok', service: 'digitabile-image-server' }));
-
-app.listen(PORT, () => console.log(`Digitabile Image Server on port ${PORT}`));
+app.get('/', (req, res) => res.json({ status:'ok', service:'digitabile-image-server' }));
+app.listen(PORT, () => console.log(`Server on port ${PORT}`));
