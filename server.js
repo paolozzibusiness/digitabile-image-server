@@ -8,107 +8,92 @@ const ACCENT_COLORS = {
   blue:  '#4f8ef7',
   gold:  '#f7b94f',
   green: '#4ff7a0',
-  pink:  '#f74f9e'
+  pink:  '#f74f9e',
+  purple:'#a855f7'
 };
 
-// Wrap text into lines based on max chars per line
+function esc(str) {
+  return (str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function wrapText(text, maxChars) {
   const words = (text || '').split(' ');
   const lines = [];
   let current = '';
   for (const word of words) {
     const test = current ? current + ' ' + word : word;
-    if (test.length <= maxChars) {
-      current = test;
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
+    if (test.length <= maxChars) { current = test; }
+    else { if (current) lines.push(current); current = word; }
   }
   if (current) lines.push(current);
-  return lines;
+  return lines.slice(0, 4);
 }
 
-// Escape XML special chars for SVG text
-function esc(str) {
-  return (str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ── SLIDE endpoint ─────────────────────────────────────────────────────────
-// GET /slide?imageUrl=...&titolo=...&testo=...&numero=01/05&accent=blue
+// SLIDE endpoint - Design A Dark Editorial
+// GET /slide?imageUrl=...&titolo=...&desc1=...&desc2=...&desc3=...&desc4=...&numero=01/05&accent=blue&tag=AI
 app.get('/slide', async (req, res) => {
   try {
-    const {
-      imageUrl,
-      titolo  = 'TITOLO',
-      testo   = 'Sottotitolo della slide',
-      numero  = '01 / 05',
-      accent  = 'blue'
-    } = req.query;
-
+    const { imageUrl, titolo = 'TITOLO', desc1 = '', desc2 = '', desc3 = '', desc4 = '', numero = '01 / 05', accent = 'blue', tag = 'AI NEWS' } = req.query;
     if (!imageUrl) return res.status(400).json({ error: 'imageUrl is required' });
 
     const accentColor = ACCENT_COLORS[accent] || '#4f8ef7';
-
-    // Fetch background image
     const imgResp = await fetch(imageUrl);
     if (!imgResp.ok) throw new Error(`Image fetch failed: ${imgResp.status}`);
     const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
 
-    // Text layout
-    const titleLines = wrapText(titolo.toUpperCase(), 15); // ~15 chars per line at 88px
-    const subLines   = wrapText(testo, 38);
+    const titleLines = wrapText(titolo.toUpperCase(), 18);
+    const descLines = [desc1, desc2, desc3, desc4].filter(d => d && d.trim());
 
-    const TITLE_LINE_H = 105;
-    const SUB_LINE_H   = 52;
-    const BOTTOM_PAD   = 80;
+    const TITLE_LINE_H = 98;
+    const DESC_LINE_H = 46;
+    const SIDE_PAD = 65;
+    const BOTTOM_AREA = 100;
 
-    const totalTextH =
-      titleLines.length * TITLE_LINE_H +
-      subLines.length   * SUB_LINE_H + 20 + 60; // bar + spacing
+    const totalContentH = 6 + 16 + titleLines.length * TITLE_LINE_H + 20 + descLines.length * DESC_LINE_H;
+    const contentStartY = 1350 - BOTTOM_AREA - totalContentH - 60;
 
-    const startY = 1350 - totalTextH - BOTTOM_PAD;
-
-    // Build SVG
     let titleSvg = '';
     titleLines.forEach((line, i) => {
-      titleSvg += `<text x="65" y="${startY + 40 + i * TITLE_LINE_H}"
-        font-family="Arial,sans-serif" font-size="88" font-weight="bold"
-        fill="white">${esc(line)}</text>`;
+      titleSvg += `<text x="${SIDE_PAD}" y="${contentStartY + 22 + i * TITLE_LINE_H}" font-family="Arial Black,Arial,sans-serif" font-size="86" font-weight="900" fill="white" letter-spacing="-1">${esc(line)}</text>`;
     });
 
-    const subStartY = startY + 40 + titleLines.length * TITLE_LINE_H + 20;
-    let subSvg = '';
-    subLines.forEach((line, i) => {
-      subSvg += `<text x="65" y="${subStartY + i * SUB_LINE_H}"
-        font-family="Arial,sans-serif" font-size="40"
-        fill="rgba(255,255,255,0.88)">${esc(line)}</text>`;
+    const descStartY = contentStartY + 22 + titleLines.length * TITLE_LINE_H + 28;
+    let descSvg = '';
+    descLines.forEach((line, i) => {
+      descSvg += `<text x="${SIDE_PAD}" y="${descStartY + i * DESC_LINE_H}" font-family="Arial,sans-serif" font-size="38" font-weight="400" fill="rgba(255,255,255,0.82)">${esc(line)}</text>`;
     });
 
-    const barY = startY - 18;
+    const barY = contentStartY - 22;
+    const slideNum = parseInt(numero.split('/')[0].trim()) - 1;
+
+    const dotsSvg = [0,1,2,3,4].map(i => {
+      return i === slideNum
+        ? `<rect x="${SIDE_PAD + i * 22}" y="1290" width="26" height="8" rx="4" fill="white"/>`
+        : `<circle cx="${SIDE_PAD + 13 + i * 22}" cy="1294" r="4" fill="rgba(255,255,255,0.25)"/>`;
+    }).join('');
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
       <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stop-color="#000" stop-opacity="0.05"/>
-          <stop offset="50%"  stop-color="#000" stop-opacity="0.45"/>
-          <stop offset="100%" stop-color="#000" stop-opacity="0.90"/>
+        <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#000" stop-opacity="0.08"/>
+          <stop offset="40%" stop-color="#000" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="#000" stop-opacity="0.92"/>
         </linearGradient>
       </defs>
-      <rect width="1080" height="1350" fill="url(#g)"/>
-      <rect x="65" y="${barY}" width="65" height="6" fill="${accentColor}" rx="3"/>
+      <rect width="1080" height="1350" fill="url(#grad)"/>
+      <text x="${SIDE_PAD}" y="72" font-family="Arial,sans-serif" font-size="28" fill="rgba(255,255,255,0.45)" letter-spacing="3">${esc(numero)}</text>
+      <rect x="${1080 - SIDE_PAD - 150}" y="42" width="150" height="40" rx="4" fill="rgba(15,20,50,0.85)"/>
+      <text x="${1080 - SIDE_PAD - 75}" y="68" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${accentColor}" text-anchor="middle" letter-spacing="1">${esc(tag.toUpperCase())}</text>
+      <rect x="${SIDE_PAD}" y="${barY}" width="65" height="6" fill="${accentColor}" rx="3"/>
       ${titleSvg}
-      ${subSvg}
-      <text x="65" y="1320"
-        font-family="Arial,sans-serif" font-size="26"
-        fill="rgba(255,255,255,0.5)">${esc(numero)}</text>
-      <text x="1015" y="1320"
-        font-family="Arial,sans-serif" font-size="26" font-weight="bold"
-        fill="rgba(255,255,255,0.6)" text-anchor="end">@digitabilenews</text>
+      ${descSvg}
+      ${dotsSvg}
+      <text x="${1080 - SIDE_PAD}" y="1300" font-family="Arial,sans-serif" font-size="26" font-weight="700" fill="rgba(255,255,255,0.55)" text-anchor="end">@digitabilenews</text>
     </svg>`;
 
     const result = await sharp(imgBuffer)
@@ -120,15 +105,13 @@ app.get('/slide', async (req, res) => {
     res.set('Content-Type', 'image/jpeg');
     res.set('Cache-Control', 'no-cache');
     res.send(result);
-
   } catch (err) {
     console.error('SLIDE ERROR:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── CTA endpoint (slide 5 — follow us) ────────────────────────────────────
-// GET /cta?imageUrl=...
+// CTA endpoint - Slide 5
 app.get('/cta', async (req, res) => {
   try {
     const { imageUrl } = req.query;
@@ -140,57 +123,28 @@ app.get('/cta', async (req, res) => {
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
       <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stop-color="#000033" stop-opacity="0.55"/>
-          <stop offset="100%" stop-color="#000000" stop-opacity="0.93"/>
+        <linearGradient id="ctaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#000820" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#000000" stop-opacity="0.95"/>
         </linearGradient>
       </defs>
-      <rect width="1080" height="1350" fill="url(#g)"/>
-
-      <!-- brand top right -->
-      <text x="1015" y="65"
-        font-family="Arial,sans-serif" font-size="26" font-weight="bold"
-        fill="rgba(255,255,255,0.6)" text-anchor="end">@digitabilenews</text>
-
-      <!-- robot emoji area (text fallback) -->
-      <text x="540" y="530"
-        font-family="Arial,sans-serif" font-size="110"
-        text-anchor="middle">&#x1F916;</text>
-
-      <!-- main title -->
-      <text x="540" y="660"
-        font-family="Arial,sans-serif" font-size="82" font-weight="bold"
-        fill="white" text-anchor="middle">SEGUICI SU</text>
-      <text x="540" y="755"
-        font-family="Arial,sans-serif" font-size="82" font-weight="bold"
-        fill="white" text-anchor="middle">INSTAGRAM</text>
-
-      <!-- subtitle -->
-      <text x="540" y="850"
-        font-family="Arial,sans-serif" font-size="42"
-        fill="rgba(255,255,255,0.85)" text-anchor="middle">News AI ogni giorno</text>
-      <text x="540" y="910"
-        font-family="Arial,sans-serif" font-size="42"
-        fill="#7eb4ff" text-anchor="middle">@digitabilenews</text>
-
-      <!-- CTA button -->
-      <rect x="290" y="960" width="500" height="82" rx="41"
-        fill="rgba(79,142,247,0.28)" stroke="#7eb4ff" stroke-width="2"/>
-      <text x="540" y="1012"
-        font-family="Arial,sans-serif" font-size="32" font-weight="bold"
-        fill="#7eb4ff" text-anchor="middle">SEGUICI ORA &#x1F514;</text>
-
-      <!-- AI note -->
-      <text x="540" y="1120"
-        font-family="Arial,sans-serif" font-size="24"
-        fill="rgba(255,255,255,0.38)" text-anchor="middle">Contenuto creato con Intelligenza Artificiale</text>
-
-      <!-- dots navigator -->
-      <circle cx="490" cy="1290" r="8" fill="rgba(255,255,255,0.3)"/>
-      <circle cx="515" cy="1290" r="8" fill="rgba(255,255,255,0.3)"/>
-      <circle cx="540" cy="1290" r="8" fill="rgba(255,255,255,0.3)"/>
-      <circle cx="565" cy="1290" r="8" fill="rgba(255,255,255,0.3)"/>
-      <rect    x="582" y="1282" width="24" height="16" rx="8" fill="white"/>
+      <rect width="1080" height="1350" fill="url(#ctaGrad)"/>
+      <text x="1015" y="70" font-family="Arial,sans-serif" font-size="26" font-weight="700" fill="rgba(255,255,255,0.5)" text-anchor="end">@digitabilenews</text>
+      <text x="65" y="70" font-family="Arial,sans-serif" font-size="28" fill="rgba(255,255,255,0.35)" letter-spacing="3">05 / 05</text>
+      <rect x="440" y="430" width="200" height="4" fill="#4f8ef7" rx="2"/>
+      <text x="540" y="560" font-family="Arial Black,Arial,sans-serif" font-size="96" font-weight="900" fill="white" text-anchor="middle">TI</text>
+      <text x="540" y="670" font-family="Arial Black,Arial,sans-serif" font-size="96" font-weight="900" fill="white" text-anchor="middle">INTERESSA?</text>
+      <text x="540" y="760" font-family="Arial,sans-serif" font-size="42" fill="rgba(255,255,255,0.75)" text-anchor="middle">Leggi la descrizione completa</text>
+      <text x="540" y="815" font-family="Arial,sans-serif" font-size="42" fill="rgba(255,255,255,0.75)" text-anchor="middle">sotto questo post &#x2193;</text>
+      <rect x="240" y="870" width="600" height="1" fill="rgba(255,255,255,0.12)"/>
+      <text x="540" y="940" font-family="Arial,sans-serif" font-size="36" fill="rgba(255,255,255,0.55)" text-anchor="middle">Segui per news AI ogni giorno</text>
+      <text x="540" y="1005" font-family="Arial,sans-serif" font-size="56" font-weight="700" fill="#4f8ef7" text-anchor="middle">@digitabilenews &#x1F514;</text>
+      <text x="540" y="1160" font-family="Arial,sans-serif" font-size="24" fill="rgba(255,255,255,0.25)" text-anchor="middle">Contenuto creato con Intelligenza Artificiale</text>
+      <circle cx="488" cy="1300" r="4" fill="rgba(255,255,255,0.25)"/>
+      <circle cx="511" cy="1300" r="4" fill="rgba(255,255,255,0.25)"/>
+      <circle cx="534" cy="1300" r="4" fill="rgba(255,255,255,0.25)"/>
+      <circle cx="557" cy="1300" r="4" fill="rgba(255,255,255,0.25)"/>
+      <rect x="572" y="1292" width="26" height="8" rx="4" fill="white"/>
     </svg>`;
 
     const result = await sharp(imgBuffer)
@@ -202,14 +156,11 @@ app.get('/cta', async (req, res) => {
     res.set('Content-Type', 'image/jpeg');
     res.set('Cache-Control', 'no-cache');
     res.send(result);
-
   } catch (err) {
     console.error('CTA ERROR:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Health check
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'digitabile-image-server' }));
-
-app.listen(PORT, () => console.log(`✅ Digitabile Image Server on port ${PORT}`));
+app.listen(PORT, () => console.log(`Digitabile Image Server on port ${PORT}`));
