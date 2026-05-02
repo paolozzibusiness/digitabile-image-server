@@ -84,14 +84,7 @@ function buildSlideSVG(params, accentColor) {
     descSvg+=`<text x="${SIDE}" y="${descY+i*DESC_H}" font-family="Arial,sans-serif" font-size="40" fill="rgba(255,255,255,0.88)">${esc(l)}</text>`;
   });
 
-  const barY = startY-22;
   const slideNum = parseInt((numero||'1').split('/')[0].trim())-1;
-
-  const dotsSvg = [0,1,2,3,4].map(i =>
-    i === slideNum
-      ? `<rect x="${SIDE+i*22}" y="${1350-BOTTOM+12}" width="26" height="8" rx="4" fill="white"/>`
-      : `<circle cx="${SIDE+13+i*22}" cy="${1350-BOTTOM+16}" r="4" fill="rgba(255,255,255,0.3)"/>`
-  ).join('');
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
     <defs><linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
@@ -103,10 +96,8 @@ function buildSlideSVG(params, accentColor) {
     <text x="${SIDE}" y="72" font-family="Arial,sans-serif" font-size="28" fill="rgba(255,255,255,0.45)" letter-spacing="3">${esc(numero||'01 / 05')}</text>
     <rect x="${1080-SIDE-150}" y="42" width="150" height="40" rx="4" fill="rgba(15,20,50,0.85)"/>
     <text x="${1080-SIDE-75}" y="68" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${accentColor}" text-anchor="middle" letter-spacing="1">${esc((tag||'AI').toUpperCase())}</text>
-    <rect x="${SIDE}" y="${barY}" width="65" height="6" fill="${accentColor}" rx="3"/>
     ${titleSvg}
     ${descSvg}
-    ${dotsSvg}
     <text x="${1080-SIDE}" y="${1350-BOTTOM+20}" font-family="Arial,sans-serif" font-size="26" font-weight="700" fill="rgba(255,255,255,0.55)" text-anchor="end">@digitabilenews</text>
   </svg>`;
 }
